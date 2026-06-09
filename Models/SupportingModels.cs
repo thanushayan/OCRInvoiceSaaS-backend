@@ -31,6 +31,7 @@ public class SubscriptionPlan
     public decimal AnnualPrice { get; set; }
     public int MaxUsers { get; set; } = 5;
     public int MaxInvoicesPerMonth { get; set; } = 100;
+    public bool IncludesOcr { get; set; } = true;
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
@@ -43,9 +44,11 @@ public class CompanySubscription
     public Guid CompanyId { get; set; }
     public Guid SubscriptionPlanId { get; set; }
     public bool IsActive { get; set; } = true;
+    public string Status { get; set; } = "Active"; // Active, Superseded, Expired, Cancelled
     public DateTime StartDate { get; set; } = DateTime.UtcNow;
     public DateTime? EndDate { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     public Company Company { get; set; } = null!;
     public SubscriptionPlan SubscriptionPlan { get; set; } = null!;
@@ -60,6 +63,8 @@ public class Payment
     public string Currency { get; set; } = "GBP";
     public string Status { get; set; } = "Pending";
     public string? TransactionId { get; set; }
+    public string? PaymentReference { get; set; }
+    public string? Provider { get; set; }
     public DateTime PaidAt { get; set; } = DateTime.UtcNow;
 
     public CompanySubscription CompanySubscription { get; set; } = null!;

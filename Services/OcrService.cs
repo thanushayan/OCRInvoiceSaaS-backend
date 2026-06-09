@@ -15,10 +15,22 @@ public class OcrService : IOcrService
     private readonly ApplicationDbContext _db;
     private readonly IOcrProvider _ocrProvider;
     private readonly INotificationDispatcher _dispatcher;
+    private readonly IDuplicateDetectionService _duplicates;
+    private readonly ICurrencyConversionService _currency;
+    private readonly IConfiguration _config;
+    private readonly ILogger<OcrService> _logger;
 
-    public OcrService(ApplicationDbContext db, IOcrProvider ocrProvider, INotificationDispatcher dispatcher)
+    public OcrService(
+        ApplicationDbContext db,
+        IOcrProvider ocrProvider,
+        INotificationDispatcher dispatcher,
+        IDuplicateDetectionService duplicates,
+        ICurrencyConversionService currency,
+        IConfiguration config,
+        ILogger<OcrService> logger)
     {
         _db = db; _ocrProvider = ocrProvider; _dispatcher = dispatcher;
+        _duplicates = duplicates; _currency = currency; _config = config; _logger = logger;
     }
 
     public async Task<ServiceResult<OcrResultResponse>> ProcessInvoiceAsync(Guid invoiceId, Guid userId)
@@ -58,6 +70,20 @@ public class OcrService : IOcrService
             await _db.SaveChangesAsync();
             await _dispatcher.OcrCompletedAsync(invoiceId, true);
             await _dispatcher.InvoiceStatusChangedAsync(invoiceId, InvoiceStatus.Processing, InvoiceStatus.Processed);
+
+            // Post-OCR enrichment — both are best-effort and must never fail the pipeline.
+            try
+            {
+                await _duplicates.CheckAsync(invoiceId, invoice.CompanyId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Duplicate check failed for invoice {Id}", invoiceId);
+            }
+            await _currency.AttachRateToInvoiceAsync(
+                invoiceId,
+                invoice.Currency ?? "GBP",
+                _config["Currency:BaseCurrency"] ?? "GBP");
 
             return ServiceResult<OcrResultResponse>.Success(new OcrResultResponse
             {

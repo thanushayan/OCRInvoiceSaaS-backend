@@ -86,6 +86,14 @@ builder.Services.AddScoped<IActivityService, ActivityService>();
 builder.Services.AddScoped<IRateLimitService, RateLimitService>();
 builder.Services.AddHttpClient("WebhookClient");
 
+// ── Team Workflow Services ────────────────────────────────────────────────
+builder.Services.AddScoped<ITaskService, TaskService>();
+builder.Services.AddScoped<IDelegationService, DelegationService>();
+
+// ── Integration & Compliance Services (resolved by middleware) ────────────
+builder.Services.AddScoped<IdempotencyService>();
+builder.Services.AddScoped<IpAllowlistService>();
+
 
 // ── Notifications & Communication ─────────────────────────────────────────
 builder.Services.AddScoped<INotificationDispatcher, NotificationDispatcher>();
@@ -100,9 +108,9 @@ if (emailProvider == "SendGrid")
     builder.Services.AddScoped<IEmailService, SendGridEmailService>();
 else if (emailProvider == "Mailgun")
     builder.Services.AddScoped<IEmailService, MailgunEmailService>();
-// else ConsoleEmailService is already registered above
+else
+    builder.Services.AddScoped<IEmailService, ConsoleEmailService>();
 
-// ConsoleEmailService is the fallback when Email:Provider is not set
 builder.Services.AddScoped<ConsoleEmailService>(); // kept for fallback injection
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -236,10 +244,11 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-// ── Seed ──────────────────────────────────────────────────────────────────
+// ── Migrate & Seed ────────────────────────────────────────────────────────
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await db.Database.MigrateAsync();
     await DataSeeder.SeedAsync(db);
 }
 

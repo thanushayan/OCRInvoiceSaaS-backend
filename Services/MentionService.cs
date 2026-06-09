@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using OcrInvoiceSaaS.Data;
+using OcrInvoiceSaaS.Interfaces;
 
 namespace OcrInvoiceSaaS.Services;
 

@@ -14,7 +14,7 @@ public class ApprovalEscalationJob : IJob
     {
         using var scope = _scopeFactory.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<IApprovalWorkflowService>();
-        await service.EscalateOverdueStepsAsync();
+        await service.EscalateTimedOutStepsAsync();
     }
 }
 

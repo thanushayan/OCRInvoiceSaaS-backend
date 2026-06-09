@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using OcrInvoiceSaaS.Data;
+using OcrInvoiceSaaS.Interfaces;
 using OcrInvoiceSaaS.DTOs;
 using OcrInvoiceSaaS.Models;
 using OcrInvoiceSaaS.Results;

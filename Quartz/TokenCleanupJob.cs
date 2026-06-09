@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using OcrInvoiceSaaS.Data;
-using OcrInvoiceSaaS.Services;
+using OcrInvoiceSaaS.Interfaces;
 using Quartz;
 
 namespace OcrInvoiceSaaS.Quartz;

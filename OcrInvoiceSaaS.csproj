@@ -24,7 +24,6 @@
 
     <!-- AutoMapper -->
     <PackageReference Include="AutoMapper" Version="13.0.1" />
-    <PackageReference Include="AutoMapper.Extensions.Microsoft.DependencyInjection" Version="12.0.1" />
 
     <!-- BCrypt password hashing -->
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />

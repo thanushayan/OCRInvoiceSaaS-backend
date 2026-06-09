@@ -8,10 +8,7 @@ ASP.NET Core 8 · SQL Server · EF Core · JWT · AutoMapper · Quartz.NET
 
 ```bash
 # 1. Set connection string + JWT secret in appsettings.json
-# 2. Run migrations
-dotnet ef migrations add InitialCreate --output-dir Migrations
-dotnet ef database update
-# 3. Run
+# 2. Run — migrations are applied automatically at startup
 dotnet run
 # Swagger UI → https://localhost:7150/swagger
 # Health check → https://localhost:7150/health
@@ -58,6 +55,42 @@ dotnet run
 
 ### Audit `/api/audit/{entityType}/{entityId}`
 | GET full audit trail for any entity |
+
+### Duplicate Detection
+| GET `/api/companies/{id}/duplicates` | GET `/api/invoices/{id}/duplicates` | POST `/api/companies/{id}/invoices/{id}/check-duplicates` | POST `/api/duplicates/{flagId}/review` |
+
+Runs automatically after OCR; flags ≥60% match on invoice number / vendor / amount / date.
+
+### Approval Workflows
+| POST/GET `/api/companies/{id}/workflow-templates` | DELETE `/api/workflow-templates/{id}` (Owner/Admin) |
+| POST `/api/invoices/{id}/approvals` | GET `/api/approvals/pending` | GET `/api/approvals/{id}` | POST `/api/approvals/{id}/actions` | POST `/api/approvals/{id}/cancel` (Owner/Admin) |
+
+Steps assigned by user or role; optional steps auto-skip on timeout (ApprovalEscalationJob, hourly).
+
+### Bulk OCR
+| POST `/api/companies/{id}/bulk-ocr` (≤100 invoices) | GET `/api/companies/{id}/bulk-ocr` | GET `/api/bulk-ocr/{jobId}` | POST `/api/bulk-ocr/{jobId}/cancel` |
+
+Queue drained in batches of 10 by BulkOcrProcessingJob every 2 minutes.
+
+### Purchase Orders & Matching
+| POST/GET `/api/companies/{id}/purchase-orders` | GET/DELETE `/api/purchase-orders/{id}` |
+| POST `/api/invoices/{id}/po-matches/auto` | POST/GET `/api/invoices/{id}/po-matches` | POST `/api/po-matches/{id}/dismiss` |
+
+Auto-match scores vendor (40) + amount (≤40) + PO number in OCR text (20); ≥80 = Matched.
+
+### Currency Conversion
+| GET `/api/currency/rate?from=&to=` | GET `/api/currency/convert?from=&to=&amount=` | GET `/api/currency/rates?base=GBP` | POST `/api/invoices/{id}/exchange-rate/refresh` |
+
+Open Exchange Rates with DB cache (`Currency:CacheHours`); base-currency amount attached to invoices automatically after OCR.
+
+### Webhooks
+| POST/GET `/api/companies/{id}/webhooks` (Owner/Admin to create) | DELETE `/api/webhooks/{id}` | GET `/api/webhooks/{id}/deliveries` | POST `/api/webhook-deliveries/{id}/retry` |
+
+Events: `InvoiceCreated, InvoiceOcrCompleted, InvoiceStatusChanged, InvoiceApproved, InvoiceRejected, DuplicateFlagged, BulkOcrCompleted, PaymentRecorded, ApprovalRequested` (empty list = all).
+Delivery via WebhookRetryJob (5 min) with exponential backoff. Verify signatures: `X-Webhook-Signature: t=<ts>,v1=<hex>` where `v1 = HMAC-SHA256(key = SHA-256-hex(signingSecret), msg = "<t>.<body>")`.
+
+### Reports `/api/companies/{id}/reports`
+| GET `/spend-analytics` | GET `/vat-summary?periodStart=&periodEnd=` | GET `/export/csv` | GET `/export/excel` |
 
 ### Health `/health`
 | GET — DB connectivity check |

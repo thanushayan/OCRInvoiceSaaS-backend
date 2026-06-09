@@ -51,6 +51,17 @@ public class InvoiceResponse
     public string? ExtractedVendorName { get; set; }
     public string? Notes { get; set; }
     public string Status { get; set; } = string.Empty;
+
+    // Currency conversion (Feature 4)
+    public string? BaseCurrency { get; set; }
+    public decimal? ExchangeRate { get; set; }
+    public decimal? BaseCurrencyAmount { get; set; }
+    public DateTime? ExchangeRateFetchedAt { get; set; }
+
+    // Duplicate detection / approval workflow state (Features 1 & 2)
+    public bool IsDuplicateFlagged { get; set; }
+    public Guid? ActiveApprovalInstanceId { get; set; }
+
     public VendorResponse? Vendor { get; set; }
     public string UploadedByName { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }

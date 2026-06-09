@@ -176,7 +176,7 @@ public class GdprService
     {
         bool hasPending = await _db.GdprErasureRequests.AnyAsync(r => r.RequestedByUserId == userId && (r.Status == ErasureRequestStatus.Pending || r.Status == ErasureRequestStatus.Processing));
         if (hasPending) return ServiceResult<GdprErasureResponse>.Fail("A pending erasure request already exists.", 409);
-        var req = new GdprErasureRequest { RequestedByUserId = userId, Reason = request.Reason.Trim(), Status = ErasureRequestStatus.Pending };
+        var req = new Models.GdprErasureRequest { RequestedByUserId = userId, Reason = request.Reason.Trim(), Status = ErasureRequestStatus.Pending };
         _db.GdprErasureRequests.Add(req);
         await _db.SaveChangesAsync();
         return ServiceResult<GdprErasureResponse>.Success(new GdprErasureResponse { Id = req.Id, Status = req.Status.ToString(), Reason = req.Reason, RequestedAt = req.RequestedAt }, 201);
