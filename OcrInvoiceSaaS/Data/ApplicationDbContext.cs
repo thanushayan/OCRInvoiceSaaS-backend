@@ -42,6 +42,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<PurchaseOrderItem> PurchaseOrderItems => Set<PurchaseOrderItem>();
     public DbSet<InvoicePoMatch> InvoicePoMatches => Set<InvoicePoMatch>();
     public DbSet<ExchangeRate> ExchangeRates => Set<ExchangeRate>();
+    public DbSet<InvoiceCurrencyConversion> InvoiceCurrencyConversions => Set<InvoiceCurrencyConversion>();
+    public DbSet<CompanyCurrencySetting> CompanyCurrencySettings => Set<CompanyCurrencySetting>();
 
     // ── Team & Workflow ───────────────────────────────────────────────────────
     public DbSet<InvoiceMention> InvoiceMentions => Set<InvoiceMention>();
@@ -396,6 +398,34 @@ public class ApplicationDbContext : DbContext
             e.Property(x => x.Source).HasMaxLength(50);
         });
 
+        modelBuilder.Entity<InvoiceCurrencyConversion>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Invoice)
+             .WithMany()
+             .HasForeignKey(x => x.InvoiceId)
+             .OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.ExchangeRate)
+             .WithMany()
+             .HasForeignKey(x => x.ExchangeRateId)
+             .OnDelete(DeleteBehavior.SetNull);
+            e.Property(x => x.OriginalCurrency).HasMaxLength(10).IsRequired();
+            e.Property(x => x.BaseCurrency).HasMaxLength(10).IsRequired();
+            e.Property(x => x.OriginalAmount).HasPrecision(18, 4);
+            e.Property(x => x.ConvertedAmount).HasPrecision(18, 4);
+            e.Property(x => x.RateUsed).HasPrecision(18, 6);
+        });
+
+        modelBuilder.Entity<CompanyCurrencySetting>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Company)
+             .WithMany()
+             .HasForeignKey(x => x.CompanyId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.CompanyId).IsUnique();
+            e.Property(x => x.BaseCurrency).HasMaxLength(10).IsRequired();
+        });
 
         // ══ Team & Workflow ════════════════════════════════════════════════
 
