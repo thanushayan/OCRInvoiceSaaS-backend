@@ -15,9 +15,6 @@ public class CurrencyConversionService : ICurrencyConversionService
     private readonly IConfiguration _config;
     private readonly ILogger<CurrencyConversionService> _logger;
 
-    // Rates are cached for 4 hours before re-fetching
-    private const int CacheHours = 4;
-
     public CurrencyConversionService(
         ApplicationDbContext db,
         IHttpClientFactory httpClientFactory,
@@ -30,209 +27,301 @@ public class CurrencyConversionService : ICurrencyConversionService
         _logger            = logger;
     }
 
-    public async Task<ServiceResult<ExchangeRateResponse>> GetRateAsync(string fromCurrency, string toCurrency)
-    {
-        var from = fromCurrency.ToUpper().Trim();
-        var to   = toCurrency.ToUpper().Trim();
+    // ── Base Currency Setting ─────────────────────────────────────────────────
 
-        if (from == to)
+    public async Task<ServiceResult<CompanyCurrencySettingResponse>> GetBaseCurrencyAsync(Guid companyId)
+    {
+        var setting = await _db.CompanyCurrencySettings
+            .FirstOrDefaultAsync(s => s.CompanyId == companyId);
+
+        if (setting == null)
         {
-            return ServiceResult<ExchangeRateResponse>.Success(new ExchangeRateResponse
+            return ServiceResult<CompanyCurrencySettingResponse>.Success(new CompanyCurrencySettingResponse
             {
-                FromCurrency = from,
-                ToCurrency   = to,
-                Rate         = 1m,
-                RateDate     = DateTime.UtcNow.Date,
-                Source       = "Identity",
-                FetchedAt    = DateTime.UtcNow
+                CompanyId    = companyId,
+                BaseCurrency = "USD",
+                UpdatedAt    = DateTime.UtcNow
             });
         }
 
-        // Check cache first
-        var cached = await _db.ExchangeRates
-            .Where(r => r.FromCurrency == from && r.ToCurrency == to &&
-                        r.FetchedAt >= DateTime.UtcNow.AddHours(-CacheHours))
-            .OrderByDescending(r => r.FetchedAt)
-            .FirstOrDefaultAsync();
-
-        if (cached != null)
-        {
-            return ServiceResult<ExchangeRateResponse>.Success(new ExchangeRateResponse
-            {
-                FromCurrency = cached.FromCurrency,
-                ToCurrency   = cached.ToCurrency,
-                Rate         = cached.Rate,
-                RateDate     = cached.RateDate,
-                Source       = cached.Source,
-                FetchedAt    = cached.FetchedAt
-            });
-        }
-
-        // Fetch from external API
-        var rate = await FetchRateFromApiAsync(from, to);
-        if (rate == null)
-        {
-            // Fall back to manual/stored rate if API fails
-            var fallback = await _db.ExchangeRates
-                .Where(r => r.FromCurrency == from && r.ToCurrency == to)
-                .OrderByDescending(r => r.FetchedAt)
-                .FirstOrDefaultAsync();
-
-            if (fallback != null)
-            {
-                _logger.LogWarning("Using stale rate for {From}/{To} — API unavailable.", from, to);
-                return ServiceResult<ExchangeRateResponse>.Success(new ExchangeRateResponse
-                {
-                    FromCurrency = fallback.FromCurrency,
-                    ToCurrency   = fallback.ToCurrency,
-                    Rate         = fallback.Rate,
-                    RateDate     = fallback.RateDate,
-                    Source       = $"{fallback.Source} (stale)",
-                    FetchedAt    = fallback.FetchedAt
-                });
-            }
-
-            return ServiceResult<ExchangeRateResponse>.Fail(
-                $"Could not fetch exchange rate for {from}/{to}. Please enter a manual rate.", 503);
-        }
-
-        // Persist fresh rate
-        var record = new ExchangeRate
-        {
-            FromCurrency = from,
-            ToCurrency   = to,
-            Rate         = rate.Value,
-            Source       = _config["Currency:Provider"] ?? "OpenExchangeRates",
-            RateDate     = DateTime.UtcNow.Date
-        };
-
-        _db.ExchangeRates.Add(record);
-        await _db.SaveChangesAsync();
-
-        return ServiceResult<ExchangeRateResponse>.Success(new ExchangeRateResponse
-        {
-            FromCurrency = from,
-            ToCurrency   = to,
-            Rate         = rate.Value,
-            RateDate     = record.RateDate,
-            Source       = record.Source,
-            FetchedAt    = record.FetchedAt
-        });
+        return ServiceResult<CompanyCurrencySettingResponse>.Success(MapSetting(setting));
     }
 
-    public async Task<ServiceResult<CurrencyConversionResult>> ConvertAsync(
-        string fromCurrency, string toCurrency, decimal amount)
+    public async Task<ServiceResult<CompanyCurrencySettingResponse>> SetBaseCurrencyAsync(
+        Guid companyId, SetBaseCurrencyRequest request)
     {
-        var rateResult = await GetRateAsync(fromCurrency, toCurrency);
-        if (!rateResult.IsSuccess)
-            return ServiceResult<CurrencyConversionResult>.Fail(rateResult.Error!, rateResult.StatusCode);
+        var setting = await _db.CompanyCurrencySettings
+            .FirstOrDefaultAsync(s => s.CompanyId == companyId);
 
-        var r = rateResult.Data!;
-        return ServiceResult<CurrencyConversionResult>.Success(new CurrencyConversionResult
+        if (setting == null)
         {
-            FromCurrency    = r.FromCurrency,
-            ToCurrency      = r.ToCurrency,
-            OriginalAmount  = amount,
-            ConvertedAmount = Math.Round(amount * r.Rate, 2),
-            Rate            = r.Rate,
-            RateDate        = r.RateDate,
-            Source          = r.Source
-        });
-    }
-
-    public async Task AttachRateToInvoiceAsync(Guid invoiceId, string invoiceCurrency, string baseCurrency)
-    {
-        var invoice = await _db.Invoices.FindAsync(invoiceId);
-        if (invoice == null) return;
-
-        var from = invoiceCurrency.ToUpper().Trim();
-        var to   = baseCurrency.ToUpper().Trim();
-
-        invoice.BaseCurrency = to;
-
-        if (from == to)
-        {
-            invoice.ExchangeRate         = 1m;
-            invoice.BaseCurrencyAmount   = invoice.TotalAmount;
-            invoice.ExchangeRateFetchedAt = DateTime.UtcNow;
-            await _db.SaveChangesAsync();
-            return;
-        }
-
-        var rateResult = await GetRateAsync(from, to);
-        if (rateResult.IsSuccess && rateResult.Data != null)
-        {
-            invoice.ExchangeRate          = rateResult.Data.Rate;
-            invoice.BaseCurrencyAmount    = invoice.TotalAmount.HasValue
-                ? Math.Round(invoice.TotalAmount.Value * rateResult.Data.Rate, 2)
-                : null;
-            invoice.ExchangeRateFetchedAt = DateTime.UtcNow;
+            setting = new CompanyCurrencySetting
+            {
+                CompanyId    = companyId,
+                BaseCurrency = request.BaseCurrency.ToUpper(),
+                UpdatedAt    = DateTime.UtcNow
+            };
+            _db.CompanyCurrencySettings.Add(setting);
         }
         else
         {
-            _logger.LogWarning("Failed to attach rate to invoice {Id}: {Err}", invoiceId, rateResult.Error);
+            setting.BaseCurrency = request.BaseCurrency.ToUpper();
+            setting.UpdatedAt    = DateTime.UtcNow;
         }
 
         await _db.SaveChangesAsync();
+        return ServiceResult<CompanyCurrencySettingResponse>.Success(MapSetting(setting));
     }
 
-    public async Task<ServiceResult<List<ExchangeRateResponse>>> GetCachedRatesAsync(string baseCurrency)
+    // ── Invoice Conversion ────────────────────────────────────────────────────
+
+    public async Task<ServiceResult<InvoiceCurrencyConversionResponse>> ConvertInvoiceAsync(
+        Guid invoiceId, Guid companyId, ConvertInvoiceRequest request)
     {
-        var to   = baseCurrency.ToUpper().Trim();
-        var cutoff = DateTime.UtcNow.AddHours(-CacheHours);
+        var invoice = await _db.Invoices.FindAsync(invoiceId);
+        if (invoice == null)
+            return ServiceResult<InvoiceCurrencyConversionResponse>.Fail("Invoice not found.", 404);
+
+        var baseCurrencyResult = await GetBaseCurrencyAsync(companyId);
+        var baseCurrency = baseCurrencyResult.Data!.BaseCurrency;
+        var fromCurrency = request.OriginalCurrency.ToUpper();
+
+        // Remove existing conversion if re-converting
+        var existing = await _db.InvoiceCurrencyConversions
+            .FirstOrDefaultAsync(c => c.InvoiceId == invoiceId);
+        if (existing != null)
+            _db.InvoiceCurrencyConversions.Remove(existing);
+
+        decimal rate;
+        bool isManual = false;
+        Guid? exchangeRateId = null;
+
+        if (request.ManualRate.HasValue && request.ManualRate.Value > 0)
+        {
+            rate     = request.ManualRate.Value;
+            isManual = true;
+        }
+        else if (fromCurrency == baseCurrency)
+        {
+            rate = 1m;
+        }
+        else
+        {
+            var cached = await _db.ExchangeRates
+                .Where(r => r.FromCurrency == fromCurrency && r.ToCurrency == baseCurrency)
+                .OrderByDescending(r => r.FetchedAt)
+                .FirstOrDefaultAsync();
+
+            if (cached == null)
+            {
+                cached = await FetchAndSaveRateAsync(fromCurrency, baseCurrency);
+                if (cached == null)
+                    return ServiceResult<InvoiceCurrencyConversionResponse>.Fail(
+                        $"Could not retrieve exchange rate for {fromCurrency} to {baseCurrency}.", 422);
+            }
+
+            rate           = cached.Rate;
+            exchangeRateId = cached.Id;
+        }
+
+        var conversion = new InvoiceCurrencyConversion
+        {
+            InvoiceId        = invoiceId,
+            OriginalCurrency = fromCurrency,
+            OriginalAmount   = request.OriginalAmount,
+            BaseCurrency     = baseCurrency,
+            ConvertedAmount  = Math.Round(request.OriginalAmount * rate, 2),
+            RateUsed         = rate,
+            IsManualRate     = isManual,
+            ExchangeRateId   = exchangeRateId,
+            ConvertedAt      = DateTime.UtcNow
+        };
+
+        _db.InvoiceCurrencyConversions.Add(conversion);
+        await _db.SaveChangesAsync();
+
+        return ServiceResult<InvoiceCurrencyConversionResponse>.Success(MapConversion(conversion));
+    }
+
+    public async Task<ServiceResult<InvoiceCurrencyConversionResponse>> GetConversionAsync(Guid invoiceId)
+    {
+        var conversion = await _db.InvoiceCurrencyConversions
+            .FirstOrDefaultAsync(c => c.InvoiceId == invoiceId);
+
+        if (conversion == null)
+            return ServiceResult<InvoiceCurrencyConversionResponse>.Fail(
+                "No conversion record found for this invoice.", 404);
+
+        return ServiceResult<InvoiceCurrencyConversionResponse>.Success(MapConversion(conversion));
+    }
+
+    // ── Exchange Rates ────────────────────────────────────────────────────────
+
+    public async Task<ServiceResult<List<ExchangeRateResponse>>> GetRatesAsync(Guid companyId)
+    {
+        var baseCurrencyResult = await GetBaseCurrencyAsync(companyId);
+        var baseCurrency = baseCurrencyResult.Data!.BaseCurrency;
 
         var rates = await _db.ExchangeRates
-            .Where(r => r.ToCurrency == to && r.FetchedAt >= cutoff)
-            .GroupBy(r => r.FromCurrency)
-            .Select(g => g.OrderByDescending(r => r.FetchedAt).First())
+            .Where(r => r.ToCurrency == baseCurrency)
+            .OrderBy(r => r.FromCurrency)
             .ToListAsync();
 
-        return ServiceResult<List<ExchangeRateResponse>>.Success(rates.Select(r => new ExchangeRateResponse
+        var result = rates.Select(r => new ExchangeRateResponse
         {
+            Id           = r.Id,
             FromCurrency = r.FromCurrency,
             ToCurrency   = r.ToCurrency,
             Rate         = r.Rate,
-            RateDate     = r.RateDate,
             Source       = r.Source,
+            RateDate     = r.RateDate,
             FetchedAt    = r.FetchedAt
-        }).ToList());
+        }).ToList();
+
+        return ServiceResult<List<ExchangeRateResponse>>.Success(result);
     }
 
-    // ── External API integration ──────────────────────────────────────────────
-    // Uses Open Exchange Rates (free tier). Swap with ECB, Fixer.io, etc.
-    // Set "Currency:OpenExchangeRatesAppId" in appsettings.json.
-    // If no API key is set, returns null → graceful fallback to stale cache.
-
-    private async Task<decimal?> FetchRateFromApiAsync(string from, string to)
+    public async Task RefreshRatesAsync()
     {
-        var appId = _config["Currency:OpenExchangeRatesAppId"];
-        if (string.IsNullOrWhiteSpace(appId))
+        var baseCurrencies = await _db.CompanyCurrencySettings
+            .Select(s => s.BaseCurrency)
+            .Distinct()
+            .ToListAsync();
+
+        if (!baseCurrencies.Any())
+            baseCurrencies = new List<string> { "USD" };
+
+        var commonCurrencies = new[] { "USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF", "CNY", "INR", "SGD" };
+
+        foreach (var baseCurrency in baseCurrencies)
         {
-            _logger.LogDebug("No Currency:OpenExchangeRatesAppId configured — using cached/manual rates only.");
+            foreach (var from in commonCurrencies)
+            {
+                if (from == baseCurrency) continue;
+
+                try { await FetchAndSaveRateAsync(from, baseCurrency); }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to refresh rate {From} to {To}", from, baseCurrency);
+                }
+            }
+        }
+    }
+
+    // ── Currency Summary ──────────────────────────────────────────────────────
+
+    public async Task<ServiceResult<CurrencySummaryResponse>> GetCurrencySummaryAsync(
+        Guid companyId, int year, int month)
+    {
+        var baseCurrencyResult = await GetBaseCurrencyAsync(companyId);
+        var baseCurrency = baseCurrencyResult.Data!.BaseCurrency;
+
+        var conversions = await _db.InvoiceCurrencyConversions
+            .Include(c => c.Invoice)
+            .Where(c => c.Invoice.CompanyId == companyId
+                     && c.ConvertedAt.Year  == year
+                     && c.ConvertedAt.Month == month)
+            .ToListAsync();
+
+        var breakdown = conversions
+            .GroupBy(c => c.OriginalCurrency)
+            .Select(g => new CurrencyBreakdownItem
+            {
+                Currency             = g.Key,
+                InvoiceCount         = g.Count(),
+                TotalOriginalAmount  = g.Sum(c => c.OriginalAmount),
+                TotalConvertedAmount = g.Sum(c => c.ConvertedAmount),
+                AverageRate          = g.Average(c => c.RateUsed)
+            })
+            .OrderByDescending(b => b.TotalConvertedAmount)
+            .ToList();
+
+        return ServiceResult<CurrencySummaryResponse>.Success(new CurrencySummaryResponse
+        {
+            BaseCurrency        = baseCurrency,
+            Breakdown           = breakdown,
+            TotalInBaseCurrency = breakdown.Sum(b => b.TotalConvertedAmount)
+        });
+    }
+
+    // ── Private Helpers ───────────────────────────────────────────────────────
+
+    private async Task<ExchangeRate?> FetchAndSaveRateAsync(string from, string to)
+    {
+        var apiKey  = _config["ExchangeRate:ApiKey"];
+        var baseUrl = _config["ExchangeRate:BaseUrl"] ?? "https://v6.exchangerate-api.com/v6";
+
+        if (string.IsNullOrEmpty(apiKey))
+        {
+            _logger.LogWarning("ExchangeRate:ApiKey not configured.");
             return null;
         }
 
         try
         {
-            var client = _httpClientFactory.CreateClient("OxrClient");
-            // OXR returns rates relative to USD base on free plan
-            var url = $"https://openexchangerates.org/api/latest.json?app_id={appId}&base=USD&symbols={from},{to}";
-            var response = await client.GetAsync(url);
-            response.EnsureSuccessStatusCode();
+            var client = _httpClientFactory.CreateClient("ExchangeRate");
+            var url    = $"{baseUrl}/{apiKey}/pair/{from}/{to}";
+            var resp   = await client.GetAsync(url);
+            resp.EnsureSuccessStatusCode();
 
-            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var rates = json.RootElement.GetProperty("rates");
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            var root = doc.RootElement;
 
-            decimal fromRate = from == "USD" ? 1m : rates.GetProperty(from).GetDecimal();
-            decimal toRate   = to == "USD"   ? 1m : rates.GetProperty(to).GetDecimal();
+            if (root.GetProperty("result").GetString() != "success") return null;
 
-            // Convert: 1 FROM = (toRate / fromRate) TO
-            return Math.Round(toRate / fromRate, 6);
+            var rate = root.GetProperty("conversion_rate").GetDecimal();
+
+            var existing = await _db.ExchangeRates
+                .FirstOrDefaultAsync(r => r.FromCurrency == from && r.ToCurrency == to);
+
+            if (existing != null)
+            {
+                existing.Rate      = rate;
+                existing.RateDate  = DateTime.UtcNow.Date;
+                existing.FetchedAt = DateTime.UtcNow;
+                existing.Source    = "ExchangeRate-API";
+            }
+            else
+            {
+                existing = new ExchangeRate
+                {
+                    FromCurrency = from,
+                    ToCurrency   = to,
+                    Rate         = rate,
+                    RateDate     = DateTime.UtcNow.Date,
+                    FetchedAt    = DateTime.UtcNow,
+                    Source       = "ExchangeRate-API"
+                };
+                _db.ExchangeRates.Add(existing);
+            }
+
+            await _db.SaveChangesAsync();
+            return existing;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Exchange rate API call failed for {From}/{To}", from, to);
+            _logger.LogError(ex, "Failed to fetch exchange rate {From} to {To}", from, to);
             return null;
         }
     }
+
+    private static CompanyCurrencySettingResponse MapSetting(CompanyCurrencySetting s) => new()
+    {
+        CompanyId    = s.CompanyId,
+        BaseCurrency = s.BaseCurrency,
+        UpdatedAt    = s.UpdatedAt
+    };
+
+    private static InvoiceCurrencyConversionResponse MapConversion(InvoiceCurrencyConversion c) => new()
+    {
+        Id               = c.Id,
+        InvoiceId        = c.InvoiceId,
+        OriginalCurrency = c.OriginalCurrency,
+        OriginalAmount   = c.OriginalAmount,
+        BaseCurrency     = c.BaseCurrency,
+        ConvertedAmount  = c.ConvertedAmount,
+        RateUsed         = c.RateUsed,
+        IsManualRate     = c.IsManualRate,
+        ConvertedAt      = c.ConvertedAt
+    };
 }

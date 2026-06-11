@@ -408,6 +408,7 @@ public class ApplicationDbContext : DbContext
             e.HasOne(x => x.ExchangeRate)
              .WithMany()
              .HasForeignKey(x => x.ExchangeRateId)
+             .IsRequired(false)
              .OnDelete(DeleteBehavior.SetNull);
             e.Property(x => x.OriginalCurrency).HasMaxLength(10).IsRequired();
             e.Property(x => x.BaseCurrency).HasMaxLength(10).IsRequired();
