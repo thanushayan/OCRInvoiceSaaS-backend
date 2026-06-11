@@ -61,13 +61,26 @@ public interface IInvoiceMatchingService
     Task<ServiceResult> DismissMatchAsync(Guid matchId, Guid userId);
 }
 
+// ── Feature 4 — Currency Conversion ──────────────────────────────────────────
+
 public interface ICurrencyConversionService
 {
-    Task<ServiceResult<ExchangeRateResponse>> GetRateAsync(string fromCurrency, string toCurrency);
-    Task<ServiceResult<CurrencyConversionResult>> ConvertAsync(string fromCurrency, string toCurrency, decimal amount);
+    // Company base currency setting
+    Task<ServiceResult<CompanyCurrencySettingResponse>> GetBaseCurrencyAsync(Guid companyId);
+    Task<ServiceResult<CompanyCurrencySettingResponse>> SetBaseCurrencyAsync(Guid companyId, SetBaseCurrencyRequest request);
 
-    /// <summary>Attach exchange rate to invoice at creation time.</summary>
-    Task AttachRateToInvoiceAsync(Guid invoiceId, string invoiceCurrency, string baseCurrency);
+    // Convert a specific invoice
+    Task<ServiceResult<InvoiceCurrencyConversionResponse>> ConvertInvoiceAsync(Guid invoiceId, Guid companyId, ConvertInvoiceRequest request);
 
-    Task<ServiceResult<List<ExchangeRateResponse>>> GetCachedRatesAsync(string baseCurrency);
+    // Get conversion record for an invoice
+    Task<ServiceResult<InvoiceCurrencyConversionResponse>> GetConversionAsync(Guid invoiceId);
+
+    // Latest exchange rates for a company's base currency
+    Task<ServiceResult<List<ExchangeRateResponse>>> GetRatesAsync(Guid companyId);
+
+    // Refresh rates from external API (called by Quartz daily job)
+    Task RefreshRatesAsync();
+
+    // Monthly spend summary broken down by currency
+    Task<ServiceResult<CurrencySummaryResponse>> GetCurrencySummaryAsync(Guid companyId, int year, int month);
 }
