@@ -271,9 +271,81 @@ public class PoMatchResponse
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Feature 5 — Currency Conversion
+// Feature 4 — Currency Conversion
 // ══════════════════════════════════════════════════════════════════════════════
 
+// ── Requests ──────────────────────────────────────────────────────────────────
+
+/// <summary>Convert an invoice's amount to the company base currency.</summary>
+public class ConvertInvoiceRequest
+{
+    [Required, MaxLength(10)]
+    public string OriginalCurrency { get; set; } = string.Empty;   // e.g. "USD"
+
+    [Required, Range(0.0001, double.MaxValue)]
+    public decimal OriginalAmount { get; set; }
+
+    /// <summary>Override the live rate. Leave null to fetch automatically.</summary>
+    public decimal? ManualRate { get; set; }
+}
+
+/// <summary>Admin sets the company's base/home currency.</summary>
+public class SetBaseCurrencyRequest
+{
+    [Required, StringLength(3, MinimumLength = 3)]
+    public string BaseCurrency { get; set; } = "USD";              // ISO 4217
+}
+
+// ── Responses ─────────────────────────────────────────────────────────────────
+
+public class InvoiceCurrencyConversionResponse
+{
+    public Guid Id { get; set; }
+    public Guid InvoiceId { get; set; }
+    public string OriginalCurrency { get; set; } = string.Empty;
+    public decimal OriginalAmount { get; set; }
+    public string BaseCurrency { get; set; } = string.Empty;
+    public decimal ConvertedAmount { get; set; }
+    public decimal RateUsed { get; set; }
+    public bool IsManualRate { get; set; }
+    public DateTime ConvertedAt { get; set; }
+}
+
+public class ExchangeRateResponse
+{
+    public Guid Id { get; set; }
+    public string FromCurrency { get; set; } = string.Empty;
+    public string ToCurrency { get; set; } = string.Empty;
+    public decimal Rate { get; set; }
+    public string Source { get; set; } = string.Empty;
+    public DateTime RateDate { get; set; }
+    public DateTime FetchedAt { get; set; }
+}
+
+public class CompanyCurrencySettingResponse
+{
+    public Guid CompanyId { get; set; }
+    public string BaseCurrency { get; set; } = string.Empty;
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class CurrencySummaryResponse
+{
+    public string BaseCurrency { get; set; } = string.Empty;
+    public List<CurrencyBreakdownItem> Breakdown { get; set; } = new();
+    public decimal TotalInBaseCurrency { get; set; }
+}
+
+public class CurrencyBreakdownItem
+{
+    public string Currency { get; set; } = string.Empty;
+    public int InvoiceCount { get; set; }
+    public decimal TotalOriginalAmount { get; set; }
+    public decimal TotalConvertedAmount { get; set; }
+    public decimal AverageRate { get; set; }
+}
+
+// ── Legacy alias kept for any existing usages ─────────────────────────────────
 public class CurrencyConversionResult
 {
     public string FromCurrency { get; set; } = string.Empty;
@@ -283,36 +355,4 @@ public class CurrencyConversionResult
     public decimal Rate { get; set; }
     public DateTime RateDate { get; set; }
     public string Source { get; set; } = string.Empty;
-}
-
-public class ExchangeRateResponse
-{
-    public string FromCurrency { get; set; } = string.Empty;
-    public string ToCurrency { get; set; } = string.Empty;
-    public decimal Rate { get; set; }
-    public DateTime RateDate { get; set; }
-    public string Source { get; set; } = string.Empty;
-    public DateTime FetchedAt { get; set; }
-}
-
-public class MultiCurrencyInvoiceRequest
-{
-    [Required, MaxLength(500)]
-    public string FileName { get; set; } = string.Empty;
-
-    [Required, MaxLength(2000)]
-    public string FileUrl { get; set; } = string.Empty;
-
-    [Required, MaxLength(20)]
-    public string FileType { get; set; } = string.Empty;
-
-    [Required, MaxLength(10)]
-    public string Currency { get; set; } = "GBP";
-
-    public Guid? VendorId { get; set; }
-    public Guid? ExpenseCategoryId { get; set; }
-    public string? Notes { get; set; }
-
-    // Optional — override automatic rate lookup
-    public decimal? ManualExchangeRate { get; set; }
 }
