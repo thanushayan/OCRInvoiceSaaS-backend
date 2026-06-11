@@ -227,3 +227,33 @@ public class ExchangeRate
     public DateTime RateDate { get; set; }                      // date the rate applies to
     public DateTime FetchedAt { get; set; } = DateTime.UtcNow;
 }
+
+/// <summary>Stores the converted amount for a specific invoice.</summary>
+public class InvoiceCurrencyConversion
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid InvoiceId { get; set; }
+    public Invoice Invoice { get; set; } = null!;
+
+    public string OriginalCurrency { get; set; } = string.Empty;   // e.g. "USD"
+    public decimal OriginalAmount { get; set; }
+    public string BaseCurrency { get; set; } = string.Empty;       // company base, e.g. "GBP"
+    public decimal ConvertedAmount { get; set; }
+    public decimal RateUsed { get; set; }
+    public bool IsManualRate { get; set; } = false;
+
+    public Guid? ExchangeRateId { get; set; }
+    public ExchangeRate? ExchangeRate { get; set; }
+
+    public DateTime ConvertedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>Per-company base currency setting.</summary>
+public class CompanyCurrencySetting
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid CompanyId { get; set; }
+    public Company Company { get; set; } = null!;
+    public string BaseCurrency { get; set; } = "USD";              // ISO 4217 code
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
