@@ -257,6 +257,14 @@ public class PurchaseOrderController : ControllerBase
         var result = await _poService.DeleteAsync(poId, _currentUser.GetUserId());
         return result.IsSuccess ? NoContent() : StatusCode(result.StatusCode, new { error = result.Error });
     }
+
+    /// <summary>Update PO details, status or line items.</summary>
+    [HttpPut("{poId:guid}")]
+    public async Task<IActionResult> Update(Guid companyId, Guid poId, [FromBody] UpdatePurchaseOrderRequest request)
+    {
+        var result = await _poService.UpdateAsync(poId, request, _currentUser.GetUserId());
+        return result.IsSuccess ? Ok(result.Data) : StatusCode(result.StatusCode, new { error = result.Error });
+    }
 }
 
 [Authorize]
