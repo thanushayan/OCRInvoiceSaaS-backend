@@ -94,15 +94,24 @@ builder.Services.AddScoped<NotificationPreferenceService>();
 builder.Services.AddHttpClient("SendGridClient");
 builder.Services.AddHttpClient("MailgunClient");
 
-// Email provider selection: set Email:Provider to "SendGrid", "Mailgun", or "Console"
+// Email provider selection: set Email:Provider to "Smtp", "SendGrid", "Mailgun", or "Console"
 var emailProvider = builder.Configuration["Email:Provider"] ?? "Console";
-if (emailProvider == "SendGrid")
-    builder.Services.AddScoped<IEmailService, SendGridEmailService>();
-else if (emailProvider == "Mailgun")
-    builder.Services.AddScoped<IEmailService, MailgunEmailService>();
-// else ConsoleEmailService is already registered above
+switch (emailProvider)
+{
+    case "Smtp":
+        builder.Services.AddScoped<IEmailService, SmtpEmailService>();
+        break;
+    case "SendGrid":
+        builder.Services.AddScoped<IEmailService, SendGridEmailService>();
+        break;
+    case "Mailgun":
+        builder.Services.AddScoped<IEmailService, MailgunEmailService>();
+        break;
+    default:
+        builder.Services.AddScoped<IEmailService, ConsoleEmailService>();
+        break;
+}
 
-// ConsoleEmailService is the fallback when Email:Provider is not set
 builder.Services.AddScoped<ConsoleEmailService>(); // kept for fallback injection
 
 // ── Helpers ───────────────────────────────────────────────────────────────

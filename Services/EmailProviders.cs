@@ -1,4 +1,6 @@
+using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Mail;
 using System.Text;
 using System.Text.Json;
 
@@ -171,5 +173,60 @@ public class MailgunEmailService : IEmailService
 
         if (!response.IsSuccessStatusCode)
             _logger.LogError("Mailgun failed for {To}: {Status}", to, response.StatusCode);
+    }
+}
+
+public class SmtpEmailService : IEmailService
+{
+    private readonly IConfiguration _config;
+    private readonly ILogger<SmtpEmailService> _logger;
+
+    public SmtpEmailService(IConfiguration config, ILogger<SmtpEmailService> logger)
+    {
+        _config = config; _logger = logger;
+    }
+
+    public async Task SendAsync(string to, string subject, string body)
+    {
+        var host      = _config["Email:Smtp:Host"];
+        var username  = _config["Email:Smtp:Username"];
+        var password  = _config["Email:Smtp:Password"];
+        var fromEmail = _config["Email:Smtp:FromEmail"] ?? username;
+        var fromName  = _config["Email:Smtp:FromName"]  ?? "OCR Invoice SaaS";
+        var port      = int.TryParse(_config["Email:Smtp:Port"], out var p) ? p : 587;
+        var enableSsl = !bool.TryParse(_config["Email:Smtp:EnableSsl"], out var ssl) || ssl;
+
+        if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+        {
+            _logger.LogWarning("SMTP not configured (Host/Username/Password missing); email to {To} not sent.", to);
+            return;
+        }
+
+        try
+        {
+            using var message = new MailMessage
+            {
+                From = new MailAddress(fromEmail!, fromName),
+                Subject = subject,
+                Body = body,
+                IsBodyHtml = true
+            };
+            message.To.Add(to);
+
+            using var client = new SmtpClient(host, port)
+            {
+                EnableSsl = enableSsl,
+                Credentials = new NetworkCredential(username, password)
+            };
+
+            await client.SendMailAsync(message);
+            _logger.LogInformation("SMTP email sent to {To} (subject: {Subject})", to, subject);
+        }
+        catch (Exception ex)
+        {
+            // Logged (not rethrown) so flows like password-reset stay non-enumerable,
+            // while the real SMTP failure (e.g. Gmail auth) is visible in the logs.
+            _logger.LogError(ex, "SMTP send failed for {To} via {Host}:{Port}", to, host, port);
+        }
     }
 }
