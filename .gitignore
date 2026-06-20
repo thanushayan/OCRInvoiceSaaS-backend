@@ -1,0 +1,25 @@
+# Next.js
+.next/
+out/
+node_modules/
+
+# Environment files
+.env.local
+.env.*.local
+
+# Build outputs
+build/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# .NET
+OcrInvoiceSaaS/bin/
+OcrInvoiceSaaS/obj/
+*.user
